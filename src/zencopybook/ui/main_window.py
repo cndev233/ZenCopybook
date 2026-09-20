@@ -19,6 +19,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from zencopybook.consts import (
+    DEFAULT_GRID_COLOR,
+    DEFAULT_TEXT_COLOR,
+)
+
 from ..core.font_manager import FontManager
 from ..core.generator import CopybookDrawer
 from .widgets import PlainTextEdit
@@ -30,8 +35,8 @@ class CopybookGeneratorWindow(QMainWindow):
         self.setWindowTitle("练字字帖生成器")
         self.resize(1280, 800)
 
-        self.DEFAULT_LINE_COLOR = QColor("#D0D0D0")
-        self.DEFAULT_TEXT_COLOR = QColor("#999999")
+        self.DEFAULT_LINE_COLOR = DEFAULT_GRID_COLOR
+        self.DEFAULT_TEXT_COLOR = DEFAULT_TEXT_COLOR
 
         self.grid_color = QColor(self.DEFAULT_LINE_COLOR)
         self.text_color = QColor(self.DEFAULT_TEXT_COLOR)
@@ -39,11 +44,11 @@ class CopybookGeneratorWindow(QMainWindow):
         # 动态获取当前包目录下的 fonts 路径
         package_dir = os.path.dirname(os.path.dirname(__file__))
         fonts_dir = os.path.join(package_dir, "fonts")
-        
+
         self.font_manager = FontManager(fonts_dir)
         self.font_family = "SimSun"
 
-        self.pages_data = []
+        self.pages_data = []  # 存储解析后的多页布局信息：[page1_chars, page2_chars, ...]
         self.current_page_index = 0
         self.total_pages = 1
         self.current_qimage = None
@@ -114,7 +119,7 @@ class CopybookGeneratorWindow(QMainWindow):
         self.text_input = PlainTextEdit()
         self.text_input.setPlaceholderText("在此输入文字...")
         self.text_input.setPlainText(
-            "永和九年岁在癸丑暮春之初会于会稽山阴之兰亭修禊事也夫人之相与俯仰一世或取诸怀抱悟言一室之内或因寄所托放浪形骸之外"
+            "永和九年，岁在癸丑，暮春之初，会于会稽山阴之兰亭，修禊事也。夫人之相与，俯仰一世，或取诸怀抱，悟言一室之内；或因寄所托，放浪形骸之外。"
         )
         control_layout.addWidget(self.text_input)
 
@@ -258,20 +263,16 @@ class CopybookGeneratorWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"复制字体文件失败:\n{result}")
 
     def generate_copybook(self):
-        text_content = (
-            self.text_input.toPlainText().replace("\n", "").replace(" ", "")
-        )
-        chunk_size = CopybookDrawer.CHARS_PER_PAGE
+        # 获取用户输入的完整文本内容（保留换行和结构，交由 parse_layout 统一处理）
+        text_content = self.text_input.toPlainText()
 
-        if text_content:
-            self.pages_data = [
-                text_content[i : i + chunk_size]
-                for i in range(0, len(text_content), chunk_size)
-            ]
+        if text_content.strip():
+            # 调用 CopybookDrawer 的排版解析方法，直接生成包含坐标和分页信息的字典列表
+            self.pages_data = CopybookDrawer.parse_layout(text_content)
         else:
-            self.pages_data = [""]
+            self.pages_data = [[]]
 
-        self.total_pages = len(self.pages_data)
+        self.total_pages = len(self.pages_data) if self.pages_data else 1
         self.current_page_index = 0
         self.render_current_page()
 
@@ -296,13 +297,15 @@ class CopybookGeneratorWindow(QMainWindow):
         if not self.pages_data:
             return
 
-        page_text = self.pages_data[self.current_page_index]
+        # 获取当前页的二维布局数据 [{"row": r, "col": c, "char": ch}, ...]
+        page_chars = self.pages_data[self.current_page_index]
+
         image = CopybookDrawer.draw_page(
-            page_text,
-            self.grid_combo.currentText(),
-            self.grid_color,
-            self.text_color,
-            self.font_family,
+            page_chars=page_chars,
+            grid_type=self.grid_combo.currentText(),
+            grid_color=self.grid_color,
+            text_color=self.text_color,
+            font_family=self.font_family,
         )
 
         self.current_qimage = image
@@ -312,7 +315,7 @@ class CopybookGeneratorWindow(QMainWindow):
         self.update_page_controls()
 
     def export_png(self):
-        if not self.pages_data:
+        if not self.pages_data or not self.pages_data[0]:
             QMessageBox.warning(self, "警告", "没有可导出的字帖内容！")
             return
 
@@ -343,29 +346,25 @@ class CopybookGeneratorWindow(QMainWindow):
         )
         if file_path:
             if self.current_qimage.save(file_path, "PNG"):
-                QMessageBox.information(
-                    self, "成功", f"字帖已成功导出至:\n{file_path}"
-                )
+                QMessageBox.information(self, "成功", f"字帖已成功导出至:\n{file_path}")
             else:
                 QMessageBox.critical(self, "失败", "导出图片时发生错误！")
 
     def export_all_pages(self):
-        dir_path = QFileDialog.getExistingDirectory(
-            self, "选择保存所有页面的文件夹"
-        )
+        dir_path = QFileDialog.getExistingDirectory(self, "选择保存所有页面的文件夹")
         if not dir_path:
             return
 
         success_count = 0
         grid_type = self.grid_combo.currentText()
 
-        for idx, page_text in enumerate(self.pages_data):
+        for idx, page_chars in enumerate(self.pages_data):
             img = CopybookDrawer.draw_page(
-                page_text,
-                grid_type,
-                self.grid_color,
-                self.text_color,
-                self.font_family,
+                page_chars=page_chars,
+                grid_type=grid_type,
+                grid_color=self.grid_color,
+                text_color=self.text_color,
+                font_family=self.font_family,
             )
             file_name = f"字帖_第{idx + 1}页.png"
             file_path = os.path.join(dir_path, file_name)
