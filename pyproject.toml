@@ -1,0 +1,20 @@
+[project]
+name = "zencopybook"
+version = "0.1.0"
+description = "A typography copybook generator."
+readme = "README.md"
+authors = [
+    { name = "cdv233", email = "cndev233@qq.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "pyside6>=6.11.2",
+]
+
+[project.scripts]
+# 这里的格式为: "脚本命令名" = "包名.文件名:函数名"
+zencopybook = "zencopybook.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
